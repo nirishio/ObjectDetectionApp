@@ -3,13 +3,16 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Rubik:ital,wght@0,300..900;1,300..900&display=swap" rel="stylesheet">
     <title>Object Detection with Camera</title>
     <style>
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            font-family: "Rubik", sans-serif;
             margin: 0;
             padding: 20px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, #A1FFC0 0%, #F7D5B5 100%);
             min-height: 100vh;
         }
 
@@ -23,7 +26,7 @@
         }
 
         .header {
-            background: linear-gradient(135deg, #ff6b6b, #ee5a24);
+            background: linear-gradient(135deg, #176132, #806246);
             color: white;
             padding: 30px;
             text-align: center;
@@ -234,37 +237,37 @@
 <body>
     <div class="container">
         <div class="header">
-            <h1>🎯 Object Detection</h1>
-            <p>Upload an image or capture a photo to detect objects with AI</p>
+            <h1>🎯 Визначувач напоїв</h1>
+            <p>Завантажуйте фото або використайте камеру для створення фото-знімку і ШІ знайде об'єкти на фото!</p>
         </div>
 
         <div class="main-content">
             <div class="input-section">
                 <!-- Upload Section -->
                 <div class="upload-card">
-                    <h3>📁 Upload Image</h3>
+                    <h3>📁 Завантажити зображення</h3>
                     <form id="upload-form" enctype="multipart/form-data">
                         <div class="file-input-wrapper">
                             <input type="file" id="image-file" name="image" accept="image/*" class="file-input" required>
-                            <div class="btn">Choose Image File</div>
+                            <div class="btn">Оберіть зображення</div>
                         </div>
                         <br>
-                        <button type="submit" class="btn">🔍 Detect Objects</button>
+                        <button type="submit" class="btn">🔍 Визначити напої</button>
                     </form>
                 </div>
 
                 <!-- Camera Section -->
                 <div class="camera-card">
-                    <h3>📷 Camera Capture</h3>
-                    <button id="start-camera" class="btn btn-camera">Start Camera</button>
-                    <button id="stop-camera" class="btn btn-camera" style="display: none;">Stop Camera</button>
+                    <h3>📷 Використати камеру</h3>
+                    <button id="start-camera" class="btn btn-camera">Відкрити камеру</button>
+                    <button id="stop-camera" class="btn btn-camera" style="display: none;">Закрити камеру</button>
                     
                     <div class="camera-controls">
                         <div class="camera-preview">
                             <video id="camera-video" autoplay muted playsinline></video>
                             <canvas id="camera-canvas"></canvas>
                         </div>
-                        <button id="capture-photo" class="btn btn-camera">📸 Capture Photo</button>
+                        <button id="capture-photo" class="btn btn-camera">📸 Зробити знімок</button>
                     </div>
                 </div>
             </div>
@@ -315,12 +318,12 @@
                 stopCameraBtn.style.display = 'inline-block';
                 cameraControls.style.display = 'block';
                 
-                showStatus('Camera started successfully!', 'success');
+                showStatus('Камеру успішно відкрито!', 'success');
                 setTimeout(() => clearStatus(), 2000);
                 
             } catch (error) {
-                console.error('Error accessing camera:', error);
-                showStatus('Failed to access camera. Please check permissions.', 'error');
+                console.error('Не вийшло відкрити камеру:', error);
+                showStatus('Помилка в доступі до камери. Будь ласка, перевірте дозволи.', 'error');
             }
         });
 
@@ -334,7 +337,7 @@
                 stopCameraBtn.style.display = 'none';
                 cameraControls.style.display = 'none';
                 
-                showStatus('Camera stopped', 'info');
+                showStatus('Камеру вимкнено!', 'info');
                 setTimeout(() => clearStatus(), 2000);
             }
         });
@@ -354,7 +357,7 @@
                     const formData = new FormData();
                     formData.append('image', blob, 'camera-capture.jpg');
                     
-                    showStatus('Processing captured image...', 'info');
+                    showStatus('Обробляємо Ваше зображення...', 'info');
                     await processImageUpload(formData);
                 }, 'image/jpeg', 0.9);
             }
@@ -362,7 +365,7 @@
 
         // File upload handling
         document.getElementById('image-file').addEventListener('change', function() {
-            const fileName = this.files[0]?.name || 'No file selected';
+            const fileName = this.files[0]?.name || 'Нічого не вибрано...';
             const label = this.parentElement.querySelector('.btn');
             label.textContent = fileName.length > 20 ? fileName.substring(0, 20) + '...' : fileName;
         });
@@ -372,7 +375,7 @@
             const form = e.target;
             const formData = new FormData(form);
             
-            showStatus('Uploading and processing image...', 'info');
+            showStatus('Завантажуємо та обробляємо зображення...', 'info');
             await processImageUpload(formData);
         });
 
@@ -435,7 +438,7 @@
                 // Add click handlers to detection list items
                 setupDetectionListHandlers();
 
-                showStatus(`Successfully detected ${data.detections.length} objects!`, 'success');
+                showStatus(`Успішно розпізнано ${data.detections.length} напоїв!`, 'success');
                 setTimeout(() => clearStatus(), 3000);
 
             } catch (error) {

@@ -11,6 +11,30 @@ import json
 import base64
 from datetime import datetime
 import logging
+import ssl
+from werkzeug.serving import make_ssl_devcert
+from object_database import SimpleObjectDatabase
+
+OBJECT_NAME_MAPPING = {
+    'MONSTER-MANGO-LOCO_CAN': 'Monster Mango-Loco ж/б'
+}
+
+# Add category mapping
+CATEGORY_MAPPING = {
+    'MONSTER-MANGO-LOCO_CAN': 'Beverages',
+    'person': 'People',
+    'car': 'Vehicles',
+    'dog': 'Animals',
+    'cat': 'Animals'
+}
+
+def convert_object_name(original_name):
+    """Convert YOLO object name to custom name"""
+    return OBJECT_NAME_MAPPING.get(original_name, original_name)
+
+def get_object_category(original_name):
+    """Get category for an object"""
+    return CATEGORY_MAPPING.get(original_name, 'Other')
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -20,9 +44,11 @@ app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = 'uploads'
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
 
+object_db = SimpleObjectDatabase()
+
 # Load YOLO model
 try:
-    model = YOLO("best.pt")
+    model = YOLO("modelTransformed.tflite")
     labels = model.names
     logger.info(f"YOLO model loaded successfully with {len(labels)} classes")
 except Exception as e:
@@ -110,7 +136,7 @@ class CameraStream:
             current_time = time.time()
             if current_time - self.last_detection_time > self.detection_interval:
                 self.last_detection_time = current_time
-                self._run_detection(frame)
+                self._run_detection_updated(frame)
             
             return frame
             
@@ -118,8 +144,8 @@ class CameraStream:
             logger.error(f"Error getting frame: {e}")
             return None
     
-    def _run_detection(self, frame):
-        """Run YOLO detection on frame"""
+    def _run_detection_updated(self, frame):
+        """Run YOLO detection on frame with name conversion"""
         if model is None:
             return
         
@@ -134,13 +160,16 @@ class CameraStream:
                 classidx = int(det.cls.item())
                 
                 if conf > 0.5:
-                    classname = labels[classidx]
+                    original_classname = labels[classidx]
+                    converted_classname = convert_object_name(original_classname)  # Convert name
                     color = self.colors[classidx % len(self.colors)]
-                    counter[classname] += 1
+                    counter[converted_classname] += 1  # Use converted name for counting
                     
                     detections.append({
                         'id': f'det_{i}',
-                        'class': classname,
+                        'class': converted_classname,  # Use converted name
+                        'original_class': original_classname,  # Keep original for reference
+                        'category': get_object_category(original_classname),  # Add category
                         'conf': round(conf, 2),
                         'bbox': xyxy.tolist(),
                         'color': color
@@ -207,8 +236,8 @@ def generate_frames():
         camera_active = False
         logger.info("Camera streaming stopped")
 
-def detect_image(image_path):
-    """Detect objects in uploaded image"""
+def detect_image_updated(image_path):
+    """Detect objects in uploaded image with name conversion"""
     if model is None:
         raise Exception("YOLO model not loaded")
     
@@ -234,31 +263,33 @@ def detect_image(image_path):
             classidx = int(det.cls.item())
             
             if conf > 0.5:
-                classname = labels[classidx]
+                original_classname = labels[classidx]
+                converted_classname = convert_object_name(original_classname)  # Convert name
                 color = colors[classidx % len(colors)]
-                counter[classname] += 1
+                counter[converted_classname] += 1  # Use converted name
 
-                # Draw bounding box and label
+                # Draw bounding box and label with converted name
                 cv2.rectangle(frame, tuple(xyxy[:2]), tuple(xyxy[2:]), color, 2)
-                label = f"{classname}: {int(conf * 100)}%"
+                label = f"{converted_classname}: {int(conf * 100)}%"  # Use converted name
                 cv2.putText(frame, label, (xyxy[0], xyxy[1] - 10), 
                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
 
                 detections.append({
                     'id': f'det_{i}',
-                    'class': classname,
+                    'class': converted_classname,  # Use converted name
+                    'original_class': original_classname,  # Keep original
+                    'category': get_object_category(original_classname),  # Add category
                     'conf': round(conf, 2),
                     'bbox': xyxy.tolist(),
                     'color': color
                 })
 
-        # Generate unique filename for the result
+        # Rest of the function remains the same...
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         result_filename = f"result_{timestamp}_{uuid.uuid4().hex[:8]}.jpg"
         result_path = os.path.join(app.config['UPLOAD_FOLDER'], result_filename)
         cv2.imwrite(result_path, frame)
 
-        # Store original frame and detections for highlighting
         base_filename = result_filename.replace('.jpg', '')
         detection_data = {
             'original_frame': original_frame,
@@ -269,7 +300,6 @@ def detect_image(image_path):
         
         stored_detections[base_filename] = detection_data
         
-        # Clean up old detection data (keep last 50)
         if len(stored_detections) > 50:
             oldest_key = min(stored_detections.keys(), 
                            key=lambda x: stored_detections[x]['timestamp'])
@@ -281,6 +311,64 @@ def detect_image(image_path):
     except Exception as e:
         logger.error(f"Error detecting image: {e}")
         raise
+
+# Add these new API endpoints to your Flask app:
+
+@app.route('/update_mapping', methods=['POST'])
+def update_object_mapping():
+    """Update object name mappings dynamically"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "No data provided"}), 400
+        
+        global OBJECT_NAME_MAPPING
+        
+        # Update existing mappings
+        for original_name, new_name in data.items():
+            OBJECT_NAME_MAPPING[original_name] = new_name
+        
+        return jsonify({
+            "status": "success",
+            "message": f"Updated {len(data)} mappings",
+            "current_mappings": OBJECT_NAME_MAPPING
+        })
+        
+    except Exception as e:
+        logger.error(f"Update mapping error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/get_mappings', methods=['GET'])
+def get_current_mappings():
+    """Get current object name mappings"""
+    try:
+        return jsonify({
+            "status": "success",
+            "mappings": OBJECT_NAME_MAPPING,
+            "categories": CATEGORY_MAPPING
+        })
+    except Exception as e:
+        logger.error(f"Get mappings error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/reset_mappings', methods=['POST'])
+def reset_mappings():
+    """Reset mappings to default"""
+    try:
+        global OBJECT_NAME_MAPPING
+        # Reset to original mappings
+        OBJECT_NAME_MAPPING = {
+            'MONSTER-MANGO-LOCO_CAN': 'Monster Mango-Loco ж/б'
+        }
+        
+        return jsonify({
+            "status": "success",
+            "message": "Mappings reset to default",
+            "mappings": OBJECT_NAME_MAPPING
+        })
+    except Exception as e:
+        logger.error(f"Reset mappings error: {e}")
+        return jsonify({"error": str(e)}), 500
 
 @app.route("/")
 def index():
@@ -313,7 +401,7 @@ def upload():
         logger.info(f"Image uploaded: {upload_filename}")
         
         # Process the image
-        result_filename, counts, detections = detect_image(image_path)
+        result_filename, counts, detections = detect_image_updated(image_path)
         
         # Clean up upload file
         try:
@@ -355,7 +443,7 @@ def capture_photo():
         logger.info(f"Photo captured: {capture_filename}")
         
         # Analyze the captured image
-        result_filename, counts, detections = detect_image(capture_path)
+        result_filename, counts, detections = detect_image_updated(capture_path)
         
         # Clean up capture file
         try:
@@ -552,6 +640,37 @@ def cleanup_old_files():
     except Exception as e:
         logger.error(f"Cleanup error: {e}")
 
+def generate_self_signed_cert():
+    """Generate self-signed certificate for HTTPS"""
+    try:
+        # This will create cert.pem and key.pem files
+        make_ssl_devcert('cert', host='localhost')
+        logger.info("Self-signed certificate generated")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to generate certificate: {e}")
+        return False
+
+@app.route('/object_info/<object_class>')
+def get_object_info(object_class):
+    """Get detailed information about an object class"""
+    try:
+        info = object_db.get_object_info(object_class)
+        if info:
+            return jsonify({
+                "status": "success",
+                "object_class": object_class,
+                "info": info
+            })
+        else:
+            return jsonify({
+                "status": "not_found",
+                "message": f"No information available for {object_class}"
+            }), 404
+    except Exception as e:
+        logger.error(f"Object info error: {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
 if __name__ == "__main__":
     # Create upload folder
     os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
@@ -563,4 +682,26 @@ if __name__ == "__main__":
     cleanup_thread.start()
     
     logger.info("Starting Flask application...")
-    app.run(host='0.0.0.0', port=5000, debug=True, threaded=True)
+    
+    # Try to run with HTTPS first
+    try:
+        # Check if certificates exist or generate them
+        if not (os.path.exists('cert.pem') and os.path.exists('cert-key.pem')):
+            logger.info("Generating self-signed certificate...")
+            generate_self_signed_cert()
+        
+        # Create SSL context
+        context = ssl.SSLContext(ssl.PROTOCOL_TLSv1_2)
+        context.load_cert_chain('cert.pem', 'cert-key.pem')
+        
+        logger.info("Starting HTTPS server on https://0.0.0.0:5000")
+        logger.info("Access via: https://192.168.1.136:5000")
+        logger.info("Note: You'll need to accept the self-signed certificate warning")
+        
+        app.run(host='0.0.0.0', port=5000, debug=True, threaded=True, ssl_context=context)
+        
+    except Exception as e:
+        logger.warning(f"HTTPS failed: {e}")
+        logger.info("Falling back to HTTP on localhost only")
+        logger.info("For network access, use browser flags or set up proper HTTPS")
+        app.run(host='127.0.0.1', port=5000, debug=True, threaded=True)
